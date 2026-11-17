@@ -573,17 +573,52 @@ function marquee() {
   });
 }
 
+// Dish photo that trails the cursor over the Mashawi list. One source of truth (`current`)
+// decides whether it shows, and every exit path (leaving the rows, scrolling them away,
+// opening a dish/drawer/menu, switching tabs) hides it — the photo can never be left behind.
 function follower() {
   if (!fine) return;
-  const f = $('#follower'); const im = $('img', f);
+  const f = $('#follower'); const im = $('img', f); const list = $('#fireList');
+  if (!f || !list) return;
   const xTo = gsap.quickTo(f, 'x', { duration: .6, ease: 'power3' }), yTo = gsap.quickTo(f, 'y', { duration: .6, ease: 'power3' });
   const rTo = gsap.quickTo(f, 'rotation', { duration: .8, ease: 'power3' });
-  let lastX = 0;
-  addEventListener('pointermove', (e) => { xTo(e.clientX + 40); yTo(e.clientY); rTo(gsap.utils.clamp(-10, 10, (e.clientX - lastX) * .6)); lastX = e.clientX; });
-  $$('.frow').forEach((row) => {
-    row.addEventListener('pointerenter', () => { im.src = row.dataset.img; gsap.to(f, { opacity: 1, scale: 1, duration: .5, ease: 'power3' }); });
-    row.addEventListener('pointerleave', () => gsap.to(f, { opacity: 0, scale: .6, duration: .4, ease: 'power3' }));
-  });
+  const overlayOpen = () => !!document.querySelector('.modal.is-open, .drawer.is-open, .lightbox.is-open, .overlay.is-open');
+  let current = null, px = -1, py = -1, lastX = 0;
+
+  const set = (row) => {
+    if (row && overlayOpen()) row = null;
+    if (row === current) return;
+    current = row;
+    if (row) {
+      if (im.getAttribute('src') !== row.dataset.img) im.src = row.dataset.img;
+      gsap.to(f, { opacity: 1, scale: 1, duration: .5, ease: 'power3', overwrite: 'auto' });
+    } else {
+      gsap.to(f, { opacity: 0, scale: .6, duration: .35, ease: 'power3', overwrite: 'auto' });
+    }
+  };
+  const hide = () => set(null);
+  const rowAt = (x, y) => { const el = document.elementFromPoint(x, y); return el ? el.closest('.frow') : null; };
+
+  addEventListener('pointermove', (e) => {
+    px = e.clientX; py = e.clientY;
+    xTo(px + 40); yTo(py); rTo(gsap.utils.clamp(-10, 10, (px - lastX) * .6)); lastX = px;
+    set(e.pointerType === 'mouse' && e.target.closest ? e.target.closest('.frow') : null);
+  }, { passive: true });
+
+  // Wheel-scrolling moves rows out from under a still cursor without any pointer event,
+  // so re-hit-test on scroll (only while showing, or while the list is on screen).
+  const recheck = () => {
+    if (px < 0) return;
+    if (!current) { const b = list.getBoundingClientRect(); if (b.bottom < 0 || b.top > innerHeight) return; }
+    set(rowAt(px, py));
+  };
+  if (lenis) lenis.on('scroll', recheck); else addEventListener('scroll', recheck, { passive: true });
+
+  // Clicking a row opens the dish card; any other overlay, tab switch or leaving the window hides it too.
+  document.addEventListener('click', hide, true);
+  document.documentElement.addEventListener('mouseleave', hide);
+  addEventListener('blur', hide);
+  document.addEventListener('visibilitychange', hide);
 }
 
 // Eased horizontal glide (GSAP-driven, snap disabled while moving).
